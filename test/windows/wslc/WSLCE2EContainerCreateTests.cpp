@@ -97,11 +97,11 @@ class WSLCE2EContainerCreateTests
 
         auto result = RunWslc(std::format(L"container create --name {} {}", WslcContainerName, reference));
 
-        const auto expectedError = std::format(L"Unable to find image '{}' locally\r\n", reference) +
-                                   FormatErrorMessage(
-                                       std::format(L"manifest for {} not found: manifest unknown: manifest unknown", reference),
-                                       L"WSLC_E_IMAGE_NOT_FOUND");
-        result.Verify({.Stderr = expectedError, .ExitCode = 1});
+        // The first line comes from wslc itself. The registry's "manifest unknown" follows, wrapped in
+        // dockerd's "manifest for <ref> not found: " but returned as is by Podman.
+        VERIFY_IS_TRUE(result.Stderr.has_value());
+        VERIFY_IS_TRUE(result.Stderr->starts_with(std::format(L"Unable to find image '{}' locally\r\n", reference)));
+        VerifyPullImageNotFound(result, L"manifest unknown");
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Container_Create_PullPolicy)
@@ -120,10 +120,8 @@ class WSLCE2EContainerCreateTests
         EnsureContainerDoesNotExist(WslcContainerName);
 
         result = RunWslc(std::format(L"container create --pull=always --name {} {}", WslcContainerName, registryImage));
-        const auto errorMessage = FormatErrorMessage(
-            std::format(L"manifest for {} not found: manifest unknown: manifest unknown", registryImage),
-            L"WSLC_E_IMAGE_NOT_FOUND");
-        result.Verify({.Stdout = L"", .Stderr = errorMessage, .ExitCode = 1});
+        result.Verify({.Stdout = L"", .ExitCode = 1});
+        VerifyPullImageNotFound(result, L"manifest unknown");
         VerifyContainerIsNotListed(WslcContainerName);
 
         RunWslcAndVerify(std::format(L"push {}", registryImage), {.Stderr = L"", .ExitCode = 0});

@@ -340,6 +340,17 @@ inline void VerifyPushOfMissingImageFailed(const WSLCExecutionResult& result, co
         L"Pushing a missing image must fail with E_FAIL or WSLC_E_IMAGE_NOT_FOUND");
 }
 
+// Verifies that pulling an image the registry does not have failed with WSLC_E_IMAGE_NOT_FOUND and
+// carries the registry's error. dockerd wraps the registry error in its own sentence (for example
+// "manifest for <ref> not found: ..." or "pull access denied for <repo>, ..."), while Podman returns the
+// registry error as is, so only the registry's part of the message is checked.
+inline void VerifyPullImageNotFound(const WSLCExecutionResult& result, const std::wstring& registryError)
+{
+    VERIFY_ARE_EQUAL(1u, result.ExitCode.value_or(0u));
+    VERIFY_IS_TRUE(result.StderrContainsSubstring(registryError), std::format(L"Error must contain '{}'", registryError).c_str());
+    VERIFY_IS_TRUE(result.StderrContainsSubstring(L"\r\nError code: WSLC_E_IMAGE_NOT_FOUND\r\n"));
+}
+
 // Verifies that a string is a valid hex ID output.
 // truncated=true expects 12 hex chars, truncated=false expects 64 hex chars.
 inline void VerifyIdOutput(const std::wstring& id, bool truncated)

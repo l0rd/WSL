@@ -109,10 +109,8 @@ class WSLCE2EContainerRunTests
         VERIFY_IS_FALSE(result.Stdout->empty());
 
         result = RunWslc(std::format(L"container run --pull=always --rm --name {} {}", WslcContainerName, registryImage));
-        const auto errorMessage = FormatErrorMessage(
-            std::format(L"manifest for {} not found: manifest unknown: manifest unknown", registryImage),
-            L"WSLC_E_IMAGE_NOT_FOUND");
-        result.Verify({.Stdout = L"", .Stderr = errorMessage, .ExitCode = 1});
+        result.Verify({.Stdout = L"", .ExitCode = 1});
+        VerifyPullImageNotFound(result, L"manifest unknown");
         VerifyContainerIsNotListed(WslcContainerName);
 
         RunWslcAndVerify(std::format(L"push {}", registryImage), {.Stderr = L"", .ExitCode = 0});

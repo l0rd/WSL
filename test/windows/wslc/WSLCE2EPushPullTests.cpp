@@ -205,11 +205,11 @@ class WSLCE2EPushPullTests
     WSLC_TEST_METHOD(WSLCE2E_Image_Pull_NonExistentImage)
     {
         auto result = RunWslc(L"pull does-not-exist:latest");
-        auto errorMessage = FormatErrorMessage(
-            L"pull access denied for does-not-exist, repository does not exist or may require 'docker login': denied: requested "
-            L"access to the resource is denied",
-            L"WSLC_E_IMAGE_NOT_FOUND");
-        result.Verify({.Stdout = L"", .Stderr = errorMessage, .ExitCode = 1});
+        result.Verify({.Stdout = L"", .ExitCode = 1});
+
+        // dockerd wraps the registry's denial in "pull access denied for does-not-exist, repository does
+        // not exist or may require 'docker login': ...", Podman returns it as is.
+        VerifyPullImageNotFound(result, L"denied: requested access to the resource is denied");
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Pull_NameOnlyDefaultsTag)
