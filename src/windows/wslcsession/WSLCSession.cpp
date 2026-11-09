@@ -1174,7 +1174,9 @@ try
         mountPath = mountInVm(Options->ContextPath, TRUE);
     }
 
-    std::vector<std::string> buildArgs{"/usr/bin/podman", "build"};
+    // Docker always builds docker-format (schema2) images. Podman defaults to OCI, which has no field for
+    // HEALTHCHECK, SHELL or ONBUILD, so buildah would drop them with only a warning.
+    std::vector<std::string> buildArgs{"/usr/bin/podman", "build", "--format", "docker"};
     if (WI_IsFlagSet(Options->Flags, WSLCBuildImageFlagsVerbose))
     {
         buildArgs.push_back("--log-level=debug");
