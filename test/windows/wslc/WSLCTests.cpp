@@ -4660,10 +4660,15 @@ class WSLCTests
         {
             auto container = launch("wslc-test-gpu-failing-ldconfig:latest", "test-container-gpu-ldconfig-failure", "nobody");
 
-            // runc signals start before running startContainer hooks; hook failures surface through container exit.
+            // The OCI runtime signals start before running startContainer hooks; hook failures surface
+            // through container exit. The exit code and wording come from the runtime: runc exits 255
+            // and reports "exit status 42", crun exits 1 and reports "(exit code: 42)".
             const auto result = container.GetInitProcess().WaitAndCaptureOutput();
-            VERIFY_ARE_EQUAL(result.Code, 255);
-            VERIFY_IS_TRUE((result.Output.at(1) + result.Output.at(2)).find("exit status 42") != std::string::npos);
+            VERIFY_ARE_NOT_EQUAL(result.Code, 0);
+            const auto output = result.Output.at(1) + result.Output.at(2);
+            VERIFY_IS_TRUE(
+                output.find("exit status 42") != std::string::npos || output.find("exit code: 42") != std::string::npos,
+                wsl::shared::string::MultiByteToWide(output).c_str());
         }
 
         // Images without ldconfig must start without generating a VM fallback cache.
