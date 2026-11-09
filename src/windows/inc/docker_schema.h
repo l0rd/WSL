@@ -529,9 +529,21 @@ struct Health
     std::string Status;
     int FailingStreak{};
     std::vector<HealthcheckResult> Log;
-
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Health, Status, FailingStreak, Log);
 };
+
+inline void to_json(nlohmann::json& j, const Health& health)
+{
+    j = nlohmann::json{{"Status", health.Status}, {"FailingStreak", health.FailingStreak}, {"Log", health.Log}};
+}
+
+// Docker always reports Log as an array, but other engines (e.g. Podman before the first probe ran) may
+// return "Log": null. Treat null like a missing field rather than failing to parse the whole inspect.
+inline void from_json(const nlohmann::json& j, Health& health)
+{
+    health.Status = ValueOrNull<std::string>(j, "Status");
+    health.FailingStreak = ValueOrNull<int>(j, "FailingStreak");
+    health.Log = ValueOrNull<std::vector<HealthcheckResult>>(j, "Log");
+}
 
 struct ContainerInspectState
 {
