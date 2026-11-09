@@ -1375,8 +1375,22 @@ try
     const auto buildTempDirectory = std::format("{}/tmp", stagingDirectory);
     const auto stagingDockerfile = std::format("{}/Dockerfile", stagingDirectory);
 
+    // Buildah mounts an overlay over the build context under TMPDIR (buildah-context-*/N/merge) and only
+    // unmounts it when the build returns. A build killed by a cancellation leaves that overlay mounted.
+    // Its lower layer pins the context's 9p mount: unmounting the context then leaves the 9p connection
+    // open, and the Plan9 server refuses any further connection, so every later MountWindowsFolder in the
+    // session fails (and rm -rf fails on the mountpoint). Lazily unmount whatever is still mounted under
+    // the staging directory, most recent mount first, before removing it.
     auto cleanupScratch = wil::scope_exit_log(WI_DIAGNOSTICS_INFO, [&]() {
-        ServiceProcessLauncher rmLauncher("/bin/rm", {"/bin/rm", "-rf", stagingDirectory});
+        constexpr auto c_cleanupScript =
+            "set -f; mounts=; "
+            "while read -r _ target _; do "
+            "case \"$target\" in \"$1\"/*) mounts=\"$target $mounts\";; esac; "
+            "done < /proc/self/mounts; "
+            "for m in $mounts; do umount -l \"$m\"; done; "
+            "exec /bin/rm -rf \"$1\"";
+
+        ServiceProcessLauncher rmLauncher("/bin/sh", {"/bin/sh", "--norc", "-c", c_cleanupScript, "sh", stagingDirectory});
         const auto code = rmLauncher.Launch(runtime.Vm()).Wait();
         THROW_HR_IF_MSG(E_FAIL, code != 0, "Failed to remove build directory: %hs", rmLauncher.FormatResult(code).c_str());
     });
