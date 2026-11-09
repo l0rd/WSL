@@ -1140,6 +1140,11 @@ class WSLCE2EImageBuildTests
         VERIFY_IS_TRUE(ListTarEntries(tarPath).find(L"wslc-build-marker.txt") != std::wstring::npos);
     }
 
+    // The failing RUN step used by the BuildFailure tests. The error wording is builder specific
+    // (BuildKit: 'failed to solve: process "/bin/sh -c exit 7" did not complete successfully', Buildah:
+    // 'building at STEP "RUN exit 7": ... exit status 7'), but both name the failing command.
+    static constexpr auto c_failingStep = L"exit 7";
+
     // A failing build step must surface as a non-zero exit with the image exporter, and the tag
     // must not be left in the store. This is the failing counterpart to TypeImage_LoadsIntoStore.
     WSLC_TEST_METHOD(WSLCE2E_Image_Build_Output_TypeImage_BuildFailure_Fails)
@@ -1159,7 +1164,7 @@ class WSLCE2EImageBuildTests
             dockerfilePath.wstring(),
             BuiltImageOutputImageFail.NameAndTag()));
         VERIFY_ARE_EQUAL(1u, buildResult.ExitCode.value_or(0u));
-        VERIFY_IS_TRUE(buildResult.StderrContainsSubstring(L"failed to solve"));
+        VERIFY_IS_TRUE(buildResult.StderrContainsSubstring(c_failingStep), buildResult.Stderr.value().c_str());
 
         auto inspectResult = RunWslc(std::format(L"image inspect {}", BuiltImageOutputImageFail.NameAndTag()));
         VERIFY_ARE_NOT_EQUAL(0u, inspectResult.ExitCode.value_or(0u), L"a failed build must not leave an image in the store");
@@ -1180,7 +1185,7 @@ class WSLCE2EImageBuildTests
         auto buildResult =
             RunWslc(std::format(L"build \"{}\" -f \"{}\" --output type=cacheonly", contextDir.wstring(), dockerfilePath.wstring()));
         VERIFY_ARE_EQUAL(1u, buildResult.ExitCode.value_or(0u));
-        VERIFY_IS_TRUE(buildResult.StderrContainsSubstring(L"failed to solve"));
+        VERIFY_IS_TRUE(buildResult.StderrContainsSubstring(c_failingStep), buildResult.Stderr.value().c_str());
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Build_DockerfileInContextDir_Success)
@@ -1583,9 +1588,14 @@ class WSLCE2EImageBuildTests
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Build_StdinNul_ReachesBuilder)
     {
+        // The builder, not wslc, must reject the empty stdin because it holds no Dockerfile. The wording
+        // is builder specific (BuildKit: "failed to read dockerfile: open Dockerfile: no such file or
+        // directory", Buildah: "no Containerfile or Dockerfile specified or found in context directory,
+        // ...: no such file or directory"), so match the parts both share.
         auto result = RunWslc(L"build - --progress=quiet");
         VERIFY_ARE_EQUAL(1u, result.ExitCode.value());
-        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"failed to read dockerfile"), result.Stderr.value().c_str());
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"Dockerfile"), result.Stderr.value().c_str());
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"no such file or directory"), result.Stderr.value().c_str());
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Build_StdinContextAndStdinDockerfile_Fails)
