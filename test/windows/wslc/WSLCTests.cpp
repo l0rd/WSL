@@ -7688,12 +7688,13 @@ class WSLCTests
             VERIFY_IS_TRUE(lifecycleEvents[0].timeNano / 1'000'000'000 >= since);
             VERIFY_IS_TRUE(lifecycleEvents[4].timeNano / 1'000'000'000 < until);
 
-            // Each event keeps the exact time Docker reported for it.
-            // Docker also emits container events that aren't recorded, such as 'attach'.
-            const auto dockerEvents = [&](const std::string& format, std::initializer_list<std::string> extraFilters = {}) {
+            // Each event keeps the exact time the engine reported for it.
+            // The engine also emits container events that aren't recorded, such as 'init' or 'cleanup'.
+            const auto engineEvents = [&](const std::string& format, std::initializer_list<std::string> extraFilters = {}) {
                 std::vector<std::string> command{
-                    "/usr/bin/docker",
+                    "/usr/bin/podman",
                     "events",
+                    "--stream=false",
                     "--since",
                     std::to_string(lifecycleEvents.front().timeNano / 1'000'000'000),
                     "--until",
@@ -7713,15 +7714,38 @@ class WSLCTests
                 return ExpectCommandResult(m_defaultSession.get(), command, 0);
             };
 
-            const auto dockerLines = wsl::shared::string::Split(dockerEvents("{{.Action}} {{.TimeNano}}").Output[1], '\n');
+            // podman events reports libpod's action names, which the Docker API renames: 'died' is 'die'
+            // and a container 'remove' is 'destroy'.
+            std::vector<std::string> engineLines;
+            for (const auto& line : wsl::shared::string::Split(engineEvents("{{.Status}} {{.TimeNano}}").Output[1], '\n'))
+            {
+                const auto separator = line.find(' ');
+                if (separator == std::string::npos)
+                {
+                    continue;
+                }
+
+                auto action = line.substr(0, separator);
+                if (action == "died")
+                {
+                    action = "die";
+                }
+                else if (action == "remove")
+                {
+                    action = "destroy";
+                }
+
+                engineLines.push_back(action + line.substr(separator));
+            }
+
             for (const auto& event : lifecycleEvents)
             {
                 const auto expected = std::format("{} {}", event.Action, event.timeNano);
-                VERIFY_IS_TRUE(std::ranges::find(dockerLines, expected) != dockerLines.end());
+                VERIFY_IS_TRUE(std::ranges::find(engineLines, expected) != engineLines.end());
             }
 
-            const auto dockerExecDuration = dockerEvents(R"({{index .Actor.Attributes "execDuration"}})", {"event=die"}).Output[1];
-            VERIFY_ARE_EQUAL(std::format("{}\n", lifecycleEvents[3].Actor.Attributes.at("execDuration")), dockerExecDuration);
+            const auto engineExecDuration = engineEvents(R"({{index .Attributes "execDuration"}})", {"event=die"}).Output[1];
+            VERIFY_ARE_EQUAL(std::format("{}\n", lifecycleEvents[3].Actor.Attributes.at("execDuration")), engineExecDuration);
         }
 
         // Each lifecycle action is independently selectable: an 'event=<action>' filter, AND'd with
@@ -7866,7 +7890,7 @@ class WSLCTests
 
             auto stream = OpenEventStream({{"container", id.c_str()}, {"event", "stop"}});
             auto stopResult = std::async(std::launch::async, [&]() {
-                return RunCommand(m_defaultSession.get(), {"/usr/bin/docker", "stop", "-t", "0", id});
+                return RunCommand(m_defaultSession.get(), {"/usr/bin/podman", "stop", "-t", "0", id});
             });
 
             ReadEvents(stream.get(), 1);
@@ -7925,17 +7949,17 @@ class WSLCTests
         const auto markerId = marker.Id();
 
         auto runResult = ExpectCommandResult(
-            m_defaultSession.get(), {"/usr/bin/docker", "run", "-d", "--rm", "debian:latest", "sleep", "99999"}, 0);
+            m_defaultSession.get(), {"/usr/bin/podman", "run", "-d", "--rm", "debian:latest", "sleep", "99999"}, 0);
         auto externalId = runResult.Output[1];
         while (!externalId.empty() && (externalId.back() == '\n' || externalId.back() == '\r'))
         {
             externalId.pop_back();
         }
 
-        auto cleanup = wil::scope_exit([&]() { RunCommand(m_defaultSession.get(), {"/usr/bin/docker", "rm", "-f", externalId}); });
+        auto cleanup = wil::scope_exit([&]() { RunCommand(m_defaultSession.get(), {"/usr/bin/podman", "rm", "-f", externalId}); });
 
         auto stream = OpenEventStream({{"container", externalId.c_str()}, {"container", markerId.c_str()}, {"event", "kill"}});
-        ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/docker", "kill", externalId}, 0);
+        ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/podman", "kill", externalId}, 0);
 
         // Docker delivers events in order, so the marker's kill can only be first if the external one was dropped.
         VERIFY_SUCCEEDED(marker.Get().Kill(WSLCSignalSIGKILL));
@@ -8231,7 +8255,7 @@ class WSLCTests
         // Generate an unkeyed aggregate event without changing WSLC network state.
         ExpectCommandResult(
             m_defaultSession.get(),
-            {"/usr/bin/docker", "network", "prune", "-f", "--filter", "label=wslc-test-prune-matches-nothing"},
+            {"/usr/bin/podman", "network", "prune", "-f", "--filter", "label=wslc-test-prune-matches-nothing"},
             0);
 
         CreateNamedNetwork(firstNetwork, {{pruneLabel.c_str(), "yes"}});
@@ -8285,10 +8309,11 @@ class WSLCTests
 
         VERIFY_SUCCEEDED(m_defaultSession->SetNetworkFaultsForTest(FALSE));
 
-        // The rollback removed the network from dockerd, not just from the session's metadata.
+        // The rollback removed the network from the engine, not just from the session's metadata.
+        // podman exits with 125 (command failed) for a missing network.
         wil::unique_cotaskmem_ansistring output;
         VERIFY_ARE_EQUAL(WSLC_E_NETWORK_NOT_FOUND, m_defaultSession->InspectNetwork(rolledBack.c_str(), &output));
-        ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/docker", "network", "inspect", rolledBack.c_str()}, 1);
+        ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/podman", "network", "inspect", rolledBack.c_str()}, 125);
 
         const auto events = ReadEvents(stream.get(), 2);
         VERIFY_ARE_EQUAL("create", events[0].Action);
@@ -8425,11 +8450,11 @@ class WSLCTests
             auto stream = OpenEventStream({{"volume", volumeName.c_str()}});
             wil::unique_cotaskmem_ansistring output;
 
-            ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/docker", "volume", "create", volumeName}, 0);
+            ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/podman", "volume", "create", volumeName}, 0);
             VERIFY_ARE_EQUAL("create", ReadEvents(stream.get(), 1)[0].Action);
             VERIFY_SUCCEEDED(m_defaultSession->InspectVolume(volumeName.c_str(), &output));
 
-            ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/docker", "volume", "rm", volumeName}, 0);
+            ExpectCommandResult(m_defaultSession.get(), {"/usr/bin/podman", "volume", "rm", volumeName}, 0);
             cleanup.release();
 
             VERIFY_ARE_EQUAL("destroy", ReadEvents(stream.get(), 1)[0].Action);
