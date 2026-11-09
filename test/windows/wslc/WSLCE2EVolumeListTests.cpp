@@ -145,11 +145,16 @@ class WSLCE2EVolumeListTests
 
     WSLC_TEST_METHOD(WSLCE2E_Volume_List_Filter_InvalidDanglingValue)
     {
-        // Dangling values are validated by the Docker daemon, which rejects non-boolean values.
+        // Dangling values are validated by the container engine, which rejects non-boolean values.
+        // The wording is engine specific (dockerd says "invalid filter 'dangling=[maybe]'", Podman says
+        // the value is not valid for the dangling filter), so only check that the error names the
+        // filter and the rejected value.
         const auto result = RunWslc(L"volume list --filter dangling=maybe");
         VERIFY_ARE_EQUAL(1, result.ExitCode);
         VERIFY_IS_TRUE(result.Stderr.has_value());
-        VERIFY_ARE_NOT_EQUAL(std::wstring::npos, result.Stderr->find(L"invalid filter 'dangling=[maybe]'"));
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"filter"));
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"dangling"));
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"maybe"));
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Volume_List_Filter_Driver)
