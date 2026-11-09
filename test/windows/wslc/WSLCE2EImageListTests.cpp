@@ -331,11 +331,14 @@ class WSLCE2EImageListTests
 
     WSLC_TEST_METHOD(WSLCE2E_Image_List_Filter_InvalidKey)
     {
-        // Filter keys are validated by the Docker daemon, which rejects unknown keys.
+        // Filter keys are validated by the container engine, which rejects unknown keys. The wording
+        // is engine specific (dockerd says "invalid filter 'color'", Podman reports an invalid image
+        // filter "color"), so only check that the error names the filter and the rejected key.
         const auto result = RunWslc(L"image list --filter color=blue");
         VERIFY_ARE_EQUAL(1, result.ExitCode);
         VERIFY_IS_TRUE(result.Stderr.has_value());
-        VERIFY_ARE_NOT_EQUAL(std::wstring::npos, result.Stderr->find(L"invalid filter"));
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"filter"));
+        VERIFY_IS_TRUE(result.StderrContainsSubstring(L"color"));
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_List_Filter_Reference)
