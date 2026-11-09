@@ -1513,18 +1513,19 @@ class WSLCTests
             return static_cast<uint64_t>(size.QuadPart);
         };
 
-        // Bytes used by the guest filesystem backing the docker data root.
+        // Bytes used by the guest filesystem backing Podman's storage (graphroot), on the storage VHD.
         auto guestUsedBytes = [&]() {
             const auto result =
-                ExpectCommandResult(session.get(), {"/bin/sh", "-c", "df -k /var/lib/docker | awk 'NR == 2 {print $3}'"}, 0);
+                ExpectCommandResult(session.get(), {"/bin/sh", "-c", "df -k /var/lib/containers | awk 'NR == 2 {print $3}'"}, 0);
 
             return std::stoull(result.Output.at(1)) * 1024;
         };
 
-        // Entries left behind in the directory docker extracts the incoming tar into.
+        // Entries left behind in the directory Podman stages the incoming tar in. The system distro sets
+        // image_copy_tmp_dir to "storage", which is <graphroot>/tmp.
         auto guestTempEntryCount = [&]() {
             const auto result =
-                ExpectCommandResult(session.get(), {"/bin/sh", "-c", "ls -A /var/lib/docker/tmp 2>/dev/null | wc -l"}, 0);
+                ExpectCommandResult(session.get(), {"/bin/sh", "-c", "ls -A /var/lib/containers/tmp 2>/dev/null | wc -l"}, 0);
 
             return std::stoull(result.Output.at(1));
         };
@@ -1593,10 +1594,10 @@ class WSLCTests
             static_cast<unsigned long long>(growthBudget),
             static_cast<long long>(finalGuestUsed - baselineGuestUsed));
 
-        // Reloading the same tar must not leave docker's extraction directory behind.
+        // Reloading the same tar must not leave the engine's staging files behind.
         VERIFY_ARE_EQUAL(0ull, guestTempEntryCount());
 
-        // Docker deduplicates the identical layers, so the guest filesystem must not retain a tar's
+        // The engine deduplicates the identical layers, so the guest filesystem must not retain a tar's
         // worth of data per load. A failure here means the temporary extraction is being leaked inside
         // the guest rather than merely being unreclaimable on the host.
         VERIFY_IS_TRUE(finalGuestUsed < baselineGuestUsed + tarSize);
