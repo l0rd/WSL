@@ -2936,8 +2936,9 @@ class WSLCTests
             const auto& config = inspectResult.Config.value();
             VERIFY_IS_TRUE(config.Cmd.has_value());
             VERIFY_IS_TRUE(config.Cmd->size() > 0);
-            VERIFY_IS_TRUE(config.Entrypoint.has_value());
-            VERIFY_ARE_EQUAL(0, config.Entrypoint->size());
+            // debian has no entrypoint. dockerd reports it as an empty list, while Podman omits the
+            // field (it is omitempty in the Docker API types too); both mean "no entrypoint".
+            VERIFY_IS_TRUE(!config.Entrypoint.has_value() || config.Entrypoint->empty());
             VERIFY_IS_TRUE(config.Env.has_value());
             VERIFY_IS_TRUE(config.Env->size() > 0);
             VERIFY_IS_FALSE(config.Labels.has_value());
