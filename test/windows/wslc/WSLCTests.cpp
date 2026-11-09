@@ -6555,8 +6555,10 @@ class WSLCTests
         options.Subnet = subnet.c_str();
         options.IpRange = "10.0.0.0/24";
 
+        // The wording is engine specific (dockerd: "invalid ip-range ...: parent subnet ... doesn't contain
+        // ip-range"), but the error must point at the subnet the range does not fit in.
         VERIFY_ARE_EQUAL(E_INVALIDARG, m_defaultSession->CreateNetwork(&options, nullptr));
-        ValidateCOMErrorMessageContains(L"invalid ip-range");
+        ValidateCOMErrorMessageContains(wsl::shared::string::MultiByteToWide(subnet));
 
         wil::unique_cotaskmem_ansistring output;
         VERIFY_ARE_EQUAL(WSLC_E_NETWORK_NOT_FOUND, m_defaultSession->InspectNetwork(networkName.c_str(), &output));
