@@ -1030,9 +1030,7 @@ class WSLCE2EContainerRunTests
         VERIFY_IS_TRUE(std::ranges::find(endpoint.Aliases, "db") != endpoint.Aliases.end());
     }
 
-    // Blocks evaluation while cleaning up networks with active endpoints.
-    // WSLC_TEST_METHOD(WSLCE2E_Container_Run_NetworkAlias_DockerStyleMultiNetwork_Success)
-    void WSLCE2E_Container_Run_NetworkAlias_DockerStyleMultiNetwork_Success()
+    WSLC_TEST_METHOD(WSLCE2E_Container_Run_NetworkAlias_DockerStyleMultiNetwork_Success)
     {
         const auto secondNetworkName = TestNetworkName + L"-2";
         EnsureNetworkDoesNotExist(secondNetworkName);
@@ -1361,9 +1359,7 @@ with mmap.mmap(fd, 32 * 1024, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ | mmap.
         VERIFY_ARE_EQUAL(ExpectedExitCode, inspect.State.ExitCode);
     }
 
-    // Blocks evaluation while force-removing a container configured with stop-timeout -1.
-    // WSLC_TEST_METHOD(WSLCE2E_Container_Run_StopTimeout)
-    void WSLCE2E_Container_Run_StopTimeout()
+    WSLC_TEST_METHOD(WSLCE2E_Container_Run_StopTimeout)
     {
         // A positive value is forwarded to the container configuration.
         {
