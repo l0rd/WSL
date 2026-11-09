@@ -815,31 +815,9 @@ class WSLCE2EImageBuildTests
         RunSizedFileSecretSuccess(BuiltImageSecretMaxSize, L"wslc-e2e-build-secret-max-size", c_maxSecretSize);
     }
 
-    WSLC_TEST_METHOD(WSLCE2E_Image_Build_Secret_OversizeFile_Fails)
-    {
-        // One byte over BuildKit's per-secret cap (500 KiB + 1). The file is forwarded and mounted, and
-        // BuildKit enforces its MaxSecretSize limit when the secret is consumed, so the build fails.
-        auto testRoot = std::filesystem::current_path() / L"wslc-e2e-build-secret-oversize";
-        auto cleanup = SetupTestDirectory(testRoot);
-
-        auto contextDir = SharedSecretBuildContext();
-
-        auto secretFile = testRoot / L"secret.bin";
-        WriteTestFileContent(secretFile, std::string(c_maxSecretSize + 1, 'A'));
-
-        auto dockerfilePath = testRoot / L"Dockerfile";
-        WriteTestFileContent(
-            dockerfilePath,
-            SecretDockerfile("FROM debian:latest\n"
-                             "RUN --mount=type=secret,id=mysecret cat /run/secrets/mysecret > /dev/null\n"
-                             "CMD [\"echo\", \"secret-oversize\"]\n"));
-
-        auto buildResult = RunWslc(std::format(
-            L"build \"{}\" -f \"{}\" --secret id=mysecret,src=\"{}\"", contextDir.wstring(), dockerfilePath.wstring(), secretFile.wstring()));
-        VERIFY_ARE_EQUAL(1u, buildResult.ExitCode.value_or(0u));
-        VERIFY_IS_TRUE(buildResult.Stderr.has_value());
-        VERIFY_IS_FALSE(buildResult.Stderr->empty());
-    }
+    // There is deliberately no test that a secret over 500 KiB is rejected: that cap is BuildKit's
+    // internal MaxSecretSize, not part of the Docker build contract, and Buildah (used by Podman)
+    // mounts larger secrets.
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Build_Secret_MultipleFiles_Success)
     {
