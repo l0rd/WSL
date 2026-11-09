@@ -109,8 +109,7 @@ try
 
     const std::string_view idView = (id != nullptr) ? id : std::string_view{};
     const bool isLog = (idView == "log");
-    const bool isPullProgress = (idView == "pullProgress");
-    const bool isStep = (idView == "step");
+    const bool isPullProgress = (!idView.empty() && total > 0 && !isLog);
 
     // quiet: suppress live progress but retain everything plain would have printed, so the destructor
     // can replay the failing step and its logs on build failure. Pull progress is excluded because it
@@ -198,18 +197,17 @@ try
         return S_OK;
     }
 
-    if (isStep)
-    {
-        CollapseWindow();
-        auto wide = MultiByteToWide(status);
-        const auto bodyLength = wide.find_last_not_of(L"\r\n") + 1;
-        const auto newlines = wide.substr(bodyLength);
-        wide.resize(bodyLength);
+    // Else is a build step
+    CollapseWindow();
+    auto wide = MultiByteToWide(status);
+    const auto bodyLength = wide.find_last_not_of(L"\r\n") + 1;
+    const auto newlines = wide.substr(bodyLength);
+    wide.resize(bodyLength);
 
-        m_terminal.Info(L"{}{}{}{}", Color(Format::Fg::BrightGreen), wide, Color(Format::Default), newlines);
-        return S_OK;
-    }
-
+    // Pass the color sequences as arguments (not baked into the string) so Terminal strips
+    // them when --no-color is set. Color() additionally strips them outside Tty mode. The
+    // trailing newlines are emitted after the reset.
+    m_terminal.Info(L"{}{}{}{}", Color(Format::Fg::BrightGreen), wide, Color(Format::Default), newlines);
     return S_OK;
 }
 CATCH_RETURN();
