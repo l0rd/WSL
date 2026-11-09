@@ -197,9 +197,21 @@ std::unique_ptr<WSLCVhdVolumeImpl> WSLCVhdVolumeImpl::Create(
     docker_schema::CreateVolume request{};
     request.Name = name;
     request.Driver = "local";
+    // When the caller chose the root owner, also pass it as uid=/gid= so Podman marks the volume as
+    // "don't chown": otherwise, on the first mount of the (empty) volume into a container whose image
+    // has no content to copy up at the target, Podman chowns the volume root to the container's user
+    // and overwrites the owner baked in at format time, which Docker never does. Unlike leaving the
+    // volume non-empty, this keeps the copy-up that seeds the volume with the image's content. The
+    // kernel ignores these filesystem options on a bind mount.
+    std::string mountOptions = "bind";
+    if (opts.Uid.has_value() && opts.Gid.has_value())
+    {
+        mountOptions += std::format(",uid={},gid={}", *opts.Uid, *opts.Gid);
+    }
+
     request.DriverOpts = {
         {"type", "none"},
-        {"o", "bind"},
+        {"o", mountOptions},
         {"device", virtualMachinePath},
     };
     request.Labels = {{WSLCVolumeMetadataLabel, wsl::shared::ToJson(metadata)}};
