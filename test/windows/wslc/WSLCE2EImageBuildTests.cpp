@@ -225,12 +225,17 @@ class WSLCE2EImageBuildTests
         auto dockerfile = std::format("FROM {}\nCMD [\"echo\", \"pull-ok\"]\n", string::WideToMultiByte(registryImage));
         WriteTestFileContent(dockerfilePath, dockerfile);
 
-        // The base image is already local, so only --pull can make the FROM step resolve a registry digest.
+        // Point the local tag at a different image than the registry holds, so the base image the
+        // build uses tells whether it came from the registry (--pull) or from the local store. The
+        // build progress output is builder specific and does not reliably show the resolved digest.
+        RunWslcAndVerify(std::format(L"image tag {} {}", DebianTestImage().NameAndTag(), registryImage), {.ExitCode = 0});
+
         auto buildResult = RunWslc(std::format(
             L"build \"{}\" -f \"{}\" -t {} --pull --verbose", contextDir.wstring(), dockerfilePath.wstring(), BuiltImagePull.NameAndTag()));
         buildResult.Verify({.Stdout = L"", .ExitCode = 0});
 
-        VERIFY_IS_TRUE(buildResult.StderrContainsSubstring(std::format(L"{}@sha256:", registryImage)));
+        // Only the alpine image pushed to the registry has /etc/alpine-release; the local debian does not.
+        RunWslcAndVerify(std::format(L"container run --rm {} cat /etc/alpine-release", BuiltImagePull.NameAndTag()), {.ExitCode = 0});
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Build_Target_Success)
@@ -1261,7 +1266,9 @@ class WSLCE2EImageBuildTests
         THROW_HR_IF(E_FAIL, ec.value() != 0 || !std::filesystem::exists(contextDir));
 
         // `RUN date +%N` produces a different output each invocation, so without caching the
-        // resulting layer (and therefore the image id) changes every build.
+        // resulting layer (and therefore the image id) changes every build. The image ids are what
+        // this test checks: how a cache hit is reported in the progress output is builder specific
+        // (BuildKit: "[2/2] CACHED", Buildah: "--> Using cache <id>").
         auto dockerfilePath = testRoot / L"Dockerfile";
         WriteTestFileContent(
             dockerfilePath,
@@ -1282,18 +1289,12 @@ class WSLCE2EImageBuildTests
         cachedBuild.Verify({.Stdout = L"", .ExitCode = 0});
         const auto cachedId = InspectImage(BuiltImageNoCache.NameAndTag()).Id;
         VERIFY_ARE_EQUAL(firstId, cachedId, L"Repeated build without --no-cache should reuse the cached layer");
-        VERIFY_IS_TRUE(
-            cachedBuild.StderrContainsSubstring(L"[2/2] CACHED"),
-            L"A reused layer must be reported as cached in the build output");
 
         // --no-cache must re-run the non-deterministic step, producing a new id.
         auto noCacheBuild = RunWslc(buildCmd + L" --no-cache");
         noCacheBuild.Verify({.Stdout = L"", .ExitCode = 0});
         const auto noCacheId = InspectImage(BuiltImageNoCache.NameAndTag()).Id;
         VERIFY_ARE_NOT_EQUAL(firstId, noCacheId, L"--no-cache must rebuild the non-deterministic RUN step");
-        VERIFY_IS_FALSE(
-            noCacheBuild.StderrContainsSubstring(L"[2/2] CACHED"),
-            L"A step re-run under --no-cache must not be reported as cached");
     }
 
     // --iidfile writes the built image's ID to the given host path on success, matching docker build
