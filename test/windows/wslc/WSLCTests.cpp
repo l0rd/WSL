@@ -1661,7 +1661,8 @@ class WSLCTests
                     ToCOMInputHandle(currentExecutableHandle.get()), "invalid-image:test", fileSize.QuadPart, nullptr, &imageId),
                 E_FAIL);
 
-            ValidateCOMErrorMessage(L"archive/tar: invalid tar header");
+            // dockerd returns the tar error as is, Podman wraps it in its own import message.
+            ValidateCOMErrorMessageContains(L"archive/tar: invalid tar header");
         }
 
         // Validate that a large (300MB) invalid tar fails with proper error message and code.
