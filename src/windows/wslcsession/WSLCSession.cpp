@@ -2084,7 +2084,7 @@ try
         }
         else
         {
-            THROW_HR_IF(E_UNEXPECTED, strcpy_s(output[index].Image, image.Untagged.c_str()) != 0);
+            THROW_HR_IF(E_UNEXPECTED, strcpy_s(output[index].Image, StripPodmanRegistryPrefix(image.Untagged).c_str()) != 0);
             output[index].Type = WSLCDeletedImageTypeUntagged;
         }
 
@@ -2317,7 +2317,7 @@ try
             }
             else
             {
-                THROW_HR_IF(E_UNEXPECTED, strcpy_s(output[index].Image, image.Untagged.c_str()) != 0);
+                THROW_HR_IF(E_UNEXPECTED, strcpy_s(output[index].Image, StripPodmanRegistryPrefix(image.Untagged).c_str()) != 0);
                 output[index].Type = WSLCDeletedImageTypeUntagged;
             }
 
