@@ -518,9 +518,13 @@ class WSLCE2EImageListTests
         // not imply it, because reporting is gated on the flag or an explicit {{.Digest}} in the format.
         VERIFY_ARE_EQUAL(std::string{c_none}, digestFor(L"image list --format json", debian));
 
-        // The test images are loaded from a tarball, so they carry no repo digest and report
-        // "<none>" even when digests are requested.
-        VERIFY_ARE_EQUAL(std::string{c_none}, digestFor(L"image list --digests --format json", debian));
+        // The test images are loaded from a tarball. Docker records no repo digest for a loaded image
+        // and reports "<none>", while Podman records the digest of the loaded manifest. Either way the
+        // row must be present and the column must hold a placeholder or a well-formed digest.
+        const auto requested = digestFor(L"image list --digests --format json", debian);
+        VERIFY_IS_TRUE(
+            requested == c_none || (requested.starts_with("sha256:") && requested.find('@') == std::string::npos),
+            MultiByteToWide(std::format("Unexpected digest '{}' for a loaded image", requested)).c_str());
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_List_Digests_TableMatchesJson)
@@ -532,7 +536,7 @@ class WSLCE2EImageListTests
         tableResult.Verify({.Stderr = L"", .ExitCode = 0});
 
         // Whatever json reports in the Digest field must also appear in the table's DIGEST column.
-        // The fixtures carry no repo digests, so this pins the "<none>" placeholder.
+        // On Docker the fixtures carry no repo digests, so this pins the "<none>" placeholder.
         for (const auto& image : ParseNdjsonOutputAs<ImageOutputInformation>(jsonResult))
         {
             const auto digest = wsl::shared::string::MultiByteToWide(image.Digest);
@@ -563,8 +567,11 @@ class WSLCE2EImageListTests
                 seen.emplace(image.Repository, image.Tag, image.Digest).second,
                 L"A repository, tag and digest triple must not be listed twice");
 
-            // The fixtures carry no repo digest, so every row reports the placeholder.
-            VERIFY_ARE_EQUAL(std::string{c_none}, image.Digest);
+            // The fixtures are loaded from a tarball: Docker gives them no repo digest and reports the
+            // placeholder, Podman records the loaded manifest's digest.
+            VERIFY_IS_TRUE(
+                image.Digest == c_none || (image.Digest.starts_with("sha256:") && image.Digest.find('@') == std::string::npos),
+                MultiByteToWide(std::format("Unexpected digest '{}'", image.Digest)).c_str());
         }
 
         // Expanding per digest can only ever add rows relative to the default listing.
@@ -576,7 +583,7 @@ class WSLCE2EImageListTests
 
     // Publishes one image into two repositories of a local registry and pulls both back, so the
     // image carries a real repo digest per repository. This is the only image list coverage of a
-    // non-empty digest: the tar-loaded fixtures never have one.
+    // non-empty digest: on Docker the tar-loaded fixtures never have one.
     WSLC_TEST_METHOD(WSLCE2E_Image_List_Digests_GroupsPulledDigestsByRepository)
     {
         auto session = OpenDefaultElevatedSession();
@@ -623,23 +630,31 @@ class WSLCE2EImageListTests
             auto digestResult = RunWslc(L"image list --digests --format json");
             digestResult.Verify({.Stderr = L"", .ExitCode = 0});
 
-            // Each repository reports its own digest against its own tag. A digest that was not
-            // grouped by repository would cross both repositories into extra rows.
-            for (const auto& repository : {firstRepository, secondRepository})
-            {
+            // Each repository reports its digests against its own tag, one row per digest. Docker keeps
+            // one digest per repository (the one it was pulled with), while Podman associates every
+            // digest the image has ever had with every repository name, so the row count is not fixed.
+            const auto digestsFor = [&](const std::wstring& repository) {
                 const auto rows = rowsFor(digestResult, repository);
-                VERIFY_ARE_EQUAL(
-                    1u, rows.size(), WEX::Common::String().Format(L"'%ls' should report exactly one digest row", repository.c_str()));
+                VERIFY_IS_FALSE(
+                    rows.empty(), WEX::Common::String().Format(L"'%ls' should report at least one digest row", repository.c_str()));
 
-                VERIFY_ARE_EQUAL(std::string{"v1"}, rows[0].Tag);
-                VERIFY_ARE_NOT_EQUAL(std::string{c_none}, rows[0].Digest, L"A pulled image must report its repo digest");
-                VERIFY_IS_TRUE(rows[0].Digest.starts_with("sha256:"), L"Digest should be reported as 'sha256:...'");
-                VERIFY_IS_TRUE(rows[0].Digest.find('@') == std::string::npos, L"Digest should not retain the 'repo@' prefix");
-            }
+                std::set<std::string> digests;
+                for (const auto& row : rows)
+                {
+                    VERIFY_ARE_EQUAL(std::string{"v1"}, row.Tag);
+                    VERIFY_ARE_NOT_EQUAL(std::string{c_none}, row.Digest, L"A pulled image must report its repo digest");
+                    VERIFY_IS_TRUE(row.Digest.starts_with("sha256:"), L"Digest should be reported as 'sha256:...'");
+                    VERIFY_IS_TRUE(row.Digest.find('@') == std::string::npos, L"Digest should not retain the 'repo@' prefix");
+                    VERIFY_ARE_EQUAL(rows[0].ID, row.ID, L"Rows of one repository must report the same image ID");
+                    VERIFY_IS_TRUE(digests.emplace(row.Digest).second, L"A repository must not list the same digest twice");
+                }
 
-            // Both repositories hold the same content, so the pushed manifests share a digest and the
-            // rows differ only by repository.
-            VERIFY_ARE_EQUAL(rowsFor(digestResult, firstRepository)[0].Digest, rowsFor(digestResult, secondRepository)[0].Digest);
+                return digests;
+            };
+
+            // Both repositories hold the same content, so the pushed manifests share their digests and
+            // the rows differ only by repository.
+            VERIFY_IS_TRUE(digestsFor(firstRepository) == digestsFor(secondRepository));
             VERIFY_ARE_EQUAL(rowsFor(digestResult, firstRepository)[0].ID, rowsFor(digestResult, secondRepository)[0].ID);
 
             // Without --digests the same repositories still report one tagged row, with no digest.
