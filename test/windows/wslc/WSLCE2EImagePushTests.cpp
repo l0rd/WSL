@@ -50,20 +50,18 @@ class WSLCE2EImagePushTests
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Push_NameOnlyDefaultsTag)
     {
-        const auto errorMessage = FormatErrorMessage(L"An image does not exist locally with the tag: does-not-exist", L"E_FAIL");
-
         const auto result = RunWslc(L"image push does-not-exist");
-        result.Verify({.Stderr = errorMessage, .ExitCode = 1});
+        VerifyPushOfMissingImageFailed(result, L"does-not-exist");
         VERIFY_IS_TRUE(result.StdoutContainsLine(L"Using default tag: latest"));
 
         // The root alias resolves to the same task.
         const auto rootResult = RunWslc(L"push does-not-exist");
-        rootResult.Verify({.Stderr = errorMessage, .ExitCode = 1});
+        rootResult.Verify({.Stderr = result.Stderr, .ExitCode = 1});
         VERIFY_IS_TRUE(rootResult.StdoutContainsLine(L"Using default tag: latest"));
 
         // A name-only reference fails exactly like the tag it defaults to.
         const auto taggedResult = RunWslc(L"image push does-not-exist:latest");
-        taggedResult.Verify({.Stderr = errorMessage, .ExitCode = 1});
+        taggedResult.Verify({.Stderr = result.Stderr, .ExitCode = 1});
         VERIFY_IS_FALSE(taggedResult.StdoutContainsSubstring(L"Using default tag"));
     }
 

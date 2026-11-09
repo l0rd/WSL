@@ -327,6 +327,19 @@ std::vector<T> ParseNdjsonOutputAs(const WSLCExecutionResult& result)
     return entries;
 }
 
+// Verifies that pushing an image that does not exist locally failed with an error naming the image.
+// dockerd reports the missing image inside the push stream, which wslc surfaces as E_FAIL. Podman
+// rejects the request with a 404 up front, which wslc surfaces as the more precise WSLC_E_IMAGE_NOT_FOUND.
+inline void VerifyPushOfMissingImageFailed(const WSLCExecutionResult& result, const std::wstring& image)
+{
+    VERIFY_ARE_EQUAL(1u, result.ExitCode.value_or(0u));
+    VERIFY_IS_TRUE(result.StderrContainsSubstring(image), std::format(L"Error must name '{}'", image).c_str());
+    VERIFY_IS_TRUE(
+        result.StderrContainsSubstring(L"Error code: E_FAIL\r\n") ||
+            result.StderrContainsSubstring(L"Error code: WSLC_E_IMAGE_NOT_FOUND\r\n"),
+        L"Pushing a missing image must fail with E_FAIL or WSLC_E_IMAGE_NOT_FOUND");
+}
+
 // Verifies that a string is a valid hex ID output.
 // truncated=true expects 12 hex chars, truncated=false expects 64 hex chars.
 inline void VerifyIdOutput(const std::wstring& id, bool truncated)

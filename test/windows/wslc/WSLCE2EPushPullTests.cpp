@@ -192,15 +192,14 @@ class WSLCE2EPushPullTests
         // The canonical reference is only printed once the push has succeeded, so a failed quiet
         // push leaves stdout empty rather than claiming a reference was pushed.
         auto result = RunWslc(L"push -q does-not-exist:latest");
-        auto errorMessage = FormatErrorMessage(L"An image does not exist locally with the tag: does-not-exist", L"E_FAIL");
-        result.Verify({.Stdout = L"", .Stderr = errorMessage, .ExitCode = 1});
+        result.Verify({.Stdout = L"", .ExitCode = 1});
+        VerifyPushOfMissingImageFailed(result, L"does-not-exist");
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Push_NonExistentImage)
     {
         auto result = RunWslc(L"push does-not-exist:latest");
-        auto errorMessage = FormatErrorMessage(L"An image does not exist locally with the tag: does-not-exist", L"E_FAIL");
-        result.Verify({.Stderr = errorMessage, .ExitCode = 1});
+        VerifyPushOfMissingImageFailed(result, L"does-not-exist");
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Pull_NonExistentImage)

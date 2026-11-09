@@ -1836,9 +1836,14 @@ class WslcSdkWinRtTests
         // Positive: push an existing image to the local registry.
         PushImageToRegistry("hello-world", "latest", registryAddress, xRegistryAuth);
 
-        // Negative: pushing a non-existent image must fail.
-        VERIFY_THROWS_HR(
-            m_defaultSession.PushImageAsync(WSLCSDK::PushImageOptions(L"does-not-exist", winrt::to_hstring(xRegistryAuth))).get(), E_FAIL);
+        // Negative: pushing a non-existent image must fail. dockerd reports the missing image inside the
+        // push stream (E_FAIL); Podman rejects the request with a 404, reported as WSLC_E_IMAGE_NOT_FOUND.
+        VERIFY_THROWS_SPECIFIC(
+            m_defaultSession.PushImageAsync(WSLCSDK::PushImageOptions(L"does-not-exist", winrt::to_hstring(xRegistryAuth))).get(),
+            winrt::hresult_error,
+            [](winrt::hresult_error const& e) {
+                return e.code().value == E_FAIL || e.code().value == static_cast<HRESULT>(WSLC_E_IMAGE_NOT_FOUND);
+            });
 
         // Negative: empty image name must fail.
         VERIFY_THROWS_HR(m_defaultSession.PushImageAsync(WSLCSDK::PushImageOptions(L"", winrt::to_hstring(xRegistryAuth))).get(), E_INVALIDARG);
