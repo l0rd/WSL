@@ -178,9 +178,12 @@ class WSLCE2ENetworkTests
         result = RunWslc(std::format(L"network connect {} {}", TestNetworkName, WslcContainerName));
         VERIFY_ARE_EQUAL(1u, result.ExitCode.value());
         VERIFY_IS_TRUE(result.Stderr.has_value());
+
+        // dockerd says "endpoint with name <container> already exists in network <network>", Podman says
+        // "container <id> is already connected to network <network>: ...".
         VerifyPatternMatch(
             string::WideToMultiByte(result.Stderr.value()),
-            string::WideToMultiByte(FormatErrorMessage(L"*already exists*", L"*")));
+            string::WideToMultiByte(FormatErrorMessage(std::format(L"*already*{}*", TestNetworkName), L"*")));
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Network_Connect_WithEndpointFlags_RoundTrips)
