@@ -182,6 +182,11 @@ void WSLCSessionRuntime::SetDockerdProcess(ServiceRunningProcess&& process)
     m_dockerdProcess = std::move(process);
 }
 
+void WSLCSessionRuntime::SetHealthCheckSchedulerProcess(ServiceRunningProcess&& process)
+{
+    m_healthCheckSchedulerProcess = std::move(process);
+}
+
 void WSLCSessionRuntime::SetSwapVhdPath(std::filesystem::path path)
 {
     m_swapVhdPath = std::move(path);
@@ -541,6 +546,14 @@ void WSLCSessionRuntime::TearDownVmLockHeld(bool CaptureTerminationReason)
     {
         m_virtualMachine->OnSessionTerminated();
 
+        // The health check scheduler is a client of the Podman service: stop it first.
+        if (m_healthCheckSchedulerProcess.has_value())
+        {
+            auto schedulerExitCode = StopProcess(
+                m_healthCheckSchedulerProcess.value(), wsl::windows::wslc::ProcessTerminateTimeoutMs, wsl::windows::wslc::ProcessKillTimeoutMs);
+            WSL_LOG("HealthCheckSchedulerExit", TraceLoggingValue(schedulerExitCode, "code"));
+        }
+
         // Stop dockerd first, then containerd (dockerd is a client of containerd).
         // N.B. dockerd waits a couple seconds if there are any outstanding HTTP request sockets opened.
         if (m_dockerdProcess.has_value())
@@ -568,6 +581,7 @@ void WSLCSessionRuntime::TearDownVmLockHeld(bool CaptureTerminationReason)
         }
     }
 
+    m_healthCheckSchedulerProcess.reset();
     m_dockerdProcess.reset();
     m_containerdProcess.reset();
 

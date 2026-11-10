@@ -173,6 +173,7 @@ public:
     void OnProcessLog(const gsl::span<char>& buffer, PCSTR source) noexcept;
     void SetContainerdProcess(ServiceRunningProcess&& process);
     void SetDockerdProcess(ServiceRunningProcess&& process);
+    void SetHealthCheckSchedulerProcess(ServiceRunningProcess&& process);
 
     void SetSwapVhdPath(std::filesystem::path path);
     void SetStorageMounted(bool value) noexcept;
@@ -253,6 +254,7 @@ private:
     std::optional<WSLCVolumes> m_volumes;
     std::optional<ServiceRunningProcess> m_containerdProcess;
     std::optional<ServiceRunningProcess> m_dockerdProcess;
+    std::optional<ServiceRunningProcess> m_healthCheckSchedulerProcess;
     wil::unique_event m_vmExitedEvent;
     // Lock-free mirror of "the current VM instance has exited": written under the runtime lock when a
     // VM starts (false) or is observed dead during teardown (true), read without the lock by container

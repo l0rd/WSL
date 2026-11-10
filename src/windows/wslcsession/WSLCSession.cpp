@@ -833,6 +833,16 @@ void WSLCSession::StartPodmanSystemService()
 
     m_runtime.SetDockerdProcess(StartProcess("/usr/bin/podman", args, "podman", std::bind(&WSLCSession::OnDockerdExited, this)));
     WSL_LOG("PodmanSystemServiceStarted");
+
+    // Podman runs health checks from systemd timers, and the VM has no systemd. The system image provides a
+    // scheduler that runs them through the Podman API instead; it waits for the service socket on its own.
+    // An image without it runs no health checks.
+    constexpr auto c_healthCheckScheduler = "/usr/libexec/wslc/podman-healthcheck-scheduler";
+    m_runtime.SetHealthCheckSchedulerProcess(StartProcess(
+        "/bin/sh",
+        {"/bin/sh", "-c", std::format("[ -x {0} ] && exec {0}", c_healthCheckScheduler)},
+        "podman-healthcheck-scheduler",
+        [] { WSL_LOG("PodmanHealthCheckSchedulerExited"); }));
 }
 
 void WSLCSession::InstallTrustedRootCertificates()
