@@ -563,12 +563,18 @@ class WSLCE2EImageListTests
 
         for (const auto& image : digestRows)
         {
-            const auto it = idByRepoTag.emplace(std::make_pair(image.Repository, image.Tag), image.ID).first;
-            VERIFY_ARE_EQUAL(it->second, image.ID, L"Rows sharing a repository and tag must report the same image ID");
+            // Dangling images all list as <none>:<none> but are distinct images, so they are not grouped by
+            // repository and tag. Podman leaves some behind after builds, because it keeps its build cache as images.
+            const bool dangling = image.Repository == c_none && image.Tag == c_none;
+            if (!dangling)
+            {
+                const auto it = idByRepoTag.emplace(std::make_pair(image.Repository, image.Tag), image.ID).first;
+                VERIFY_ARE_EQUAL(it->second, image.ID, L"Rows sharing a repository and tag must report the same image ID");
 
-            VERIFY_IS_TRUE(
-                seen.emplace(image.Repository, image.Tag, image.Digest).second,
-                L"A repository, tag and digest triple must not be listed twice");
+                VERIFY_IS_TRUE(
+                    seen.emplace(image.Repository, image.Tag, image.Digest).second,
+                    L"A repository, tag and digest triple must not be listed twice");
+            }
 
             // The fixtures are loaded from a tarball: Docker gives them no repo digest and reports the
             // placeholder, Podman records the loaded manifest's digest.

@@ -72,11 +72,17 @@ class WSLCE2EImageDeleteTests
     {
         TestImageRegistry::Instance().EnsureLoaded(DebianImage);
         VerifyImageIsNotUsed(DebianImage);
+        const auto imageId = GetHashId(InspectImage(DebianImage.NameAndTag()).Id);
 
         auto result = RunWslc(std::format(L"image delete {}", DebianImage.Name));
         result.Verify({.Stderr = L"", .ExitCode = 0});
         VERIFY_IS_TRUE(result.StdoutContainsSubstring(std::format(L"Untagged: {}", DebianImage.NameAndTag())));
-        VERIFY_IS_TRUE(result.StdoutContainsSubstring(L"Deleted: sha256:"));
+
+        // Docker also reports "Deleted: sha256:<id>". Podman removes the image too, but reports it as deleted only
+        // when no other image shares its layers, such as the build cache images Podman keeps after a build.
+        // So check that the image is gone instead.
+        auto inspectResult = RunWslc(std::format(L"image inspect {}", imageId));
+        VERIFY_ARE_NOT_EQUAL(0u, inspectResult.ExitCode.value_or(0u), L"the deleted image must no longer exist");
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Image_Delete_MultipleUnusedImages_Success)
