@@ -10599,13 +10599,13 @@ class WSLCTests
             VERIFY_ARE_EQUAL(driverOptValue, opt->second);
         }
 
-        // Aliases + IPAddress + LinkLocalIPs + DriverOpts together — success, inspect verifies every field.
+        // Aliases + IPAddress + DriverOpts together — success, inspect verifies every field.
+        // LinkLocalIPs is checked on its own below, since Podman rejects it.
         {
             auto container = launchContainer("connect-endpoint-combo");
             const std::string alias1 = "primary-alias";
             const std::string alias2 = "secondary-alias";
             const std::string ipAddress = "172.70.0.42";
-            const std::string linkLocal = "169.254.10.5";
             const std::string driverOptEntry = "com.docker.network.endpoint.custom=verify";
             const std::string driverOptKey = "com.docker.network.endpoint.custom";
             const std::string driverOptValue = "verify";
@@ -10614,7 +10614,6 @@ class WSLCTests
                 {"Aliases", alias1.c_str()},
                 {"Aliases", alias2.c_str()},
                 {"IPAddress", ipAddress.c_str()},
-                {"LinkLocalIPs", linkLocal.c_str()},
                 {"DriverOpts", driverOptEntry.c_str()},
             };
 
@@ -10632,10 +10631,35 @@ class WSLCTests
             VERIFY_ARE_EQUAL(ipAddress, endpoint.IPAddress);
             VERIFY_IS_TRUE(endpoint.IPAMConfig.has_value());
             VERIFY_ARE_EQUAL(ipAddress, endpoint.IPAMConfig->IPv4Address);
-            VERIFY_IS_TRUE(std::ranges::find(endpoint.IPAMConfig->LinkLocalIPs, linkLocal) != endpoint.IPAMConfig->LinkLocalIPs.end());
             const auto opt = endpoint.DriverOpts.find(driverOptKey);
             VERIFY_IS_TRUE(opt != endpoint.DriverOpts.end());
             VERIFY_ARE_EQUAL(driverOptValue, opt->second);
+        }
+
+        // A static link-local IP: Docker stores it and echoes it back in inspect. Podman doesn't support static
+        // link-local IPs and rejects them as an invalid argument.
+        {
+            auto container = launchContainer("connect-endpoint-linklocal");
+            const std::string linkLocal = "169.254.10.5";
+            const std::vector<KeyValuePair> settings{{"LinkLocalIPs", linkLocal.c_str()}};
+            WSLCNetworkConnectionOptions options{};
+            options.NetworkName = networkName.c_str();
+            options.Settings = settings.data();
+            options.SettingsCount = static_cast<ULONG>(settings.size());
+            const HRESULT result = container.Get().ConnectToNetwork(&options);
+            if (SUCCEEDED(result))
+            {
+                auto inspect = container.Inspect();
+                VERIFY_IS_TRUE(inspect.NetworkSettings.Networks.contains(networkName));
+                const auto& endpoint = inspect.NetworkSettings.Networks.at(networkName);
+                VERIFY_IS_TRUE(endpoint.IPAMConfig.has_value());
+                VERIFY_IS_TRUE(
+                    std::ranges::find(endpoint.IPAMConfig->LinkLocalIPs, linkLocal) != endpoint.IPAMConfig->LinkLocalIPs.end());
+            }
+            else
+            {
+                VERIFY_ARE_EQUAL(E_INVALIDARG, result);
+            }
         }
 
         // Links: connect two containers to the same user-defined bridge, verify Links echoes back in inspect.
@@ -10871,7 +10895,8 @@ class WSLCTests
                 std::wstring(networkName.begin(), networkName.end())));
         }
 
-        // Primary endpoint settings (IPAddress + Aliases + LinkLocalIPs + DriverOpts) round-trip via inspect at create time.
+        // Primary endpoint settings (IPAddress + Aliases + DriverOpts) round-trip via inspect at create time.
+        // LinkLocalIPs is left out: Podman rejects it, and NetworkConnectEndpointSettingsTest covers both behaviours.
         {
             const std::string networkName = "alias-net-combo";
             createNetwork(networkName, "172.64.0.0/16");
@@ -10880,7 +10905,6 @@ class WSLCTests
             const std::string alias1 = "primary-alias";
             const std::string alias2 = "secondary-alias";
             const std::string ipAddress = "172.64.0.42";
-            const std::string linkLocal = "169.254.11.5";
             const std::string driverOptEntry = "com.docker.network.endpoint.custom=verify";
             const std::string driverOptKey = "com.docker.network.endpoint.custom";
             const std::string driverOptValue = "verify";
@@ -10890,7 +10914,6 @@ class WSLCTests
                 {"Aliases", alias1.c_str()},
                 {"Aliases", alias2.c_str()},
                 {"IPAddress", ipAddress.c_str()},
-                {"LinkLocalIPs", linkLocal.c_str()},
                 {"DriverOpts", driverOptEntry.c_str()},
             };
             WSLCContainerOptions options{};
@@ -10914,7 +10937,6 @@ class WSLCTests
             VERIFY_ARE_EQUAL(ipAddress, endpoint.IPAddress);
             VERIFY_IS_TRUE(endpoint.IPAMConfig.has_value());
             VERIFY_ARE_EQUAL(ipAddress, endpoint.IPAMConfig->IPv4Address);
-            VERIFY_IS_TRUE(std::ranges::find(endpoint.IPAMConfig->LinkLocalIPs, linkLocal) != endpoint.IPAMConfig->LinkLocalIPs.end());
             const auto opt = endpoint.DriverOpts.find(driverOptKey);
             VERIFY_IS_TRUE(opt != endpoint.DriverOpts.end());
             VERIFY_ARE_EQUAL(driverOptValue, opt->second);

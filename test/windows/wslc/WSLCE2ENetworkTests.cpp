@@ -200,22 +200,42 @@ class WSLCE2ENetworkTests
         result = RunWslc(std::format(L"container run -d --name {} {} sleep infinity", WslcContainerName, DebianImage.NameAndTag()));
         result.Verify({.Stderr = L"", .ExitCode = 0});
 
-        result = RunWslc(std::format(
-            L"network connect --network-alias {} --network-alias {} --ip {} --link-local-ip {} {} {}", alias1, alias2, ipAddress, linkLocal, TestNetworkName, WslcContainerName));
+        result = RunWslc(
+            std::format(L"network connect --network-alias {} --network-alias {} --ip {} {} {}", alias1, alias2, ipAddress, TestNetworkName, WslcContainerName));
         result.Verify({.Stderr = L"", .ExitCode = 0});
 
-        const auto inspect = InspectContainer(WslcContainerName);
         const auto networkKey = string::WideToMultiByte(TestNetworkName);
-        VERIFY_IS_TRUE(inspect.NetworkSettings.Networks.contains(networkKey));
-        const auto& endpoint = inspect.NetworkSettings.Networks.at(networkKey);
-        VERIFY_ARE_EQUAL(string::WideToMultiByte(ipAddress), endpoint.IPAddress);
-        VERIFY_IS_TRUE(endpoint.IPAMConfig.has_value());
-        VERIFY_ARE_EQUAL(string::WideToMultiByte(ipAddress), endpoint.IPAMConfig->IPv4Address);
-        VERIFY_IS_TRUE(std::ranges::find(endpoint.Aliases, string::WideToMultiByte(alias1)) != endpoint.Aliases.end());
-        VERIFY_IS_TRUE(std::ranges::find(endpoint.Aliases, string::WideToMultiByte(alias2)) != endpoint.Aliases.end());
-        VERIFY_IS_TRUE(
-            std::ranges::find(endpoint.IPAMConfig->LinkLocalIPs, string::WideToMultiByte(linkLocal)) !=
-            endpoint.IPAMConfig->LinkLocalIPs.end());
+        {
+            const auto inspect = InspectContainer(WslcContainerName);
+            VERIFY_IS_TRUE(inspect.NetworkSettings.Networks.contains(networkKey));
+            const auto& endpoint = inspect.NetworkSettings.Networks.at(networkKey);
+            VERIFY_ARE_EQUAL(string::WideToMultiByte(ipAddress), endpoint.IPAddress);
+            VERIFY_IS_TRUE(endpoint.IPAMConfig.has_value());
+            VERIFY_ARE_EQUAL(string::WideToMultiByte(ipAddress), endpoint.IPAMConfig->IPv4Address);
+            VERIFY_IS_TRUE(std::ranges::find(endpoint.Aliases, string::WideToMultiByte(alias1)) != endpoint.Aliases.end());
+            VERIFY_IS_TRUE(std::ranges::find(endpoint.Aliases, string::WideToMultiByte(alias2)) != endpoint.Aliases.end());
+        }
+
+        // A static link-local IP: Docker stores it and echoes it back in inspect. Podman doesn't support static
+        // link-local IPs and rejects them as an invalid argument.
+        result = RunWslc(std::format(L"network disconnect {} {}", TestNetworkName, WslcContainerName));
+        result.Verify({.Stderr = L"", .ExitCode = 0});
+
+        result = RunWslc(std::format(L"network connect --link-local-ip {} {} {}", linkLocal, TestNetworkName, WslcContainerName));
+        if (result.ExitCode.value_or(1) == 0)
+        {
+            const auto inspect = InspectContainer(WslcContainerName);
+            VERIFY_IS_TRUE(inspect.NetworkSettings.Networks.contains(networkKey));
+            const auto& endpoint = inspect.NetworkSettings.Networks.at(networkKey);
+            VERIFY_IS_TRUE(endpoint.IPAMConfig.has_value());
+            VERIFY_IS_TRUE(
+                std::ranges::find(endpoint.IPAMConfig->LinkLocalIPs, string::WideToMultiByte(linkLocal)) !=
+                endpoint.IPAMConfig->LinkLocalIPs.end());
+        }
+        else
+        {
+            VERIFY_IS_TRUE(result.StderrContainsSubstring(L"E_INVALIDARG"));
+        }
     }
 
     WSLC_TEST_METHOD(WSLCE2E_Network_Connect_InvalidIp_Rejected)
